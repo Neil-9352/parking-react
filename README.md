@@ -233,7 +233,7 @@ sudo bash nginx/install.sh
 ```
 
 Nginx will configure and host:
-* **Frontend application**: served at `http://<machine-ip>:3005`
+* **Frontend application**: served at `http://<machine-ip>` (port 80)
 * **Backend API reverse proxy**: served at `http://<machine-ip>:8080` (internally forwarded to `127.0.0.1:3001`)
 
 If you edit the configs in `nginx/` later, simply re-run `sudo bash nginx/install.sh` to apply and reload all changes.
