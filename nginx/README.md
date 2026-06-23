@@ -1,81 +1,88 @@
-# Nginx Reverse Proxy — Setup Guide
+# Nginx Configuration & Automation Setup Guide
 
-This directory contains the Nginx configuration that sits in front of the
-Express backend, allowing the frontend to run on a **separate machine** and
-call the API without any hardcoded IP addresses in the CORS configuration.
+This directory contains the Nginx configuration and automation script to host both the frontend static site and the backend API proxy:
+
+1. **Backend Proxy (Port 8080)**: Proxies incoming API requests to the local Express server (port 3001).
+2. **Frontend Host (Port 3000)**: Serves the compiled frontend React/Vite assets from `frontend/dist/` with routing fallbacks.
+
+This setup secures the backend by keeping it bound to `localhost` and solves CORS issues by allowing Nginx to dynamically accept requests from any origin or client IP.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────┐          ┌───────────────────────────────────────────┐
-│   Frontend Machine      │          │          Backend Machine                  │
-│                         │          │                                           │
-│  Vite / React app       │  HTTP    │  ┌──────────────────┐                     │
-│  (any IP, any port) ────┼──────────┼─►│  Nginx  :8080    │                     │
-│                         │          │  │  (public face)   │                     │
-│  VITE_API_URL=          │          │  └────────┬─────────┘                     │
-│  http://<backend-ip>    │          │           │ proxy_pass                    │
-│  :8080                  │          │           ▼                               │
-└─────────────────────────┘          │  ┌──────────────────┐                     │
-                                     │  │  Express  :3001   │ (127.0.0.1 only)   │
-                                     │  │  (never public)  │                     │
-                                     │  └──────────────────┘                     │
-                                     └───────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Nginx (Web & Proxy Server)                       │
+│                                                                             │
+│     Browser Client                   Nginx Server                           │
+│   ┌────────────────┐              ┌────────────────┐                        │
+│   │                │  Port 3000   │  Static Server │                        │
+│   │  Loads UI ◄────┼──────────────┼── Serves dist/ │                        │
+│   │                │              └────────────────┘                        │
+│   │                │                                                        │
+│   │  API Requests  │  Port 8080   ┌────────────────┐                        │
+│   │  ──────────────┼─────────────►│ Reverse Proxy  │                        │
+│   │                │              └───────┬────────┘                        │
+│   └────────────────┘                      │ proxy_pass (internal)           │
+│                                           ▼                                 │
+│                                   ┌────────────────┐                        │
+│                                   │ Express Backend│ (Port 3001, local only)│
+│                                   └────────────────┘                        │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key points:**
-- The Express server binds to `127.0.0.1:3001` — it is **not reachable** from outside.
-- Nginx is the sole public endpoint on port 8080.
-- CORS is handled by Nginx dynamically: it reflects the browser's `Origin` header, so the frontend can run on **any IP** without any code changes.
-- The backend's `FRONTEND_URL` env variable is no longer used for CORS — it can be removed or left as a documentation note.
+- The Express server binds to `127.0.0.1:3001` — it is **never reachable** directly from outside.
+- Nginx acts as the single entry point: port `3000` for frontend static files, port `8080` for backend API routes.
+- CORS is handled dynamically by Nginx, allowing flexible deployment options.
 
 ---
 
 ## Prerequisites
 
-- Linux machine (Ubuntu/Debian recommended).
-- Nginx installed: `sudo apt install nginx`
-- Node.js 18+ installed.
-- MySQL running and the database imported.
+- Linux machine (Debian, Ubuntu, Arch, etc.).
+- Nginx installed: `sudo apt install nginx` (Ubuntu/Debian) or `sudo pacman -S nginx` (Arch).
+- Node.js 18+ and npm installed.
 
 ---
 
-## One-Time Setup (Backend Machine)
+## Automated Installation (Run Once)
+
+The `install.sh` script automatically sets up the directories, updates `nginx.conf` if necessary to include enabled sites, copies config files, resolves the absolute paths, tests the configuration, and reloads Nginx.
 
 ```bash
-# 1. Clone / copy the project onto the backend machine
-git clone <repo-url>
-cd parking-react
+# 1. Build the frontend static assets first
+cd frontend
+cp .env.example .env  # Edit .env and set VITE_API_URL to http://<backend-machine-ip>:8080
+npm install
+npm run build
+cd ..
 
-# 2. Install Nginx site config (run once)
+# 2. Run the automated Nginx installer (requires root or sudo)
 sudo bash nginx/install.sh
-
-# 3. Verify Nginx is running and the health endpoint works
-curl http://localhost:8080/health
-# Expected: {"status":"ok"}
 ```
 
 ---
 
-## Starting the Backend
+## Service Endpoints
+
+Once installed, Nginx serves:
+* **Frontend Web Application**: [http://localhost:3000](http://localhost:3000)
+* **Backend API Proxy**: [http://localhost:8080/api](http://localhost:8080/api)
+* **Backend Health Check**: [http://localhost:8080/health](http://localhost:8080/health)
+
+---
+
+## Starting the Backend Service
+
+To start the backend process behind Nginx:
 
 ```bash
 cd backend
-
-# Copy and fill in your environment variables
-cp .env.example .env
-nano .env          # set DB credentials, JWT_SECRET, etc.
-
-# Install dependencies (first time)
+cp .env.example .env   # Set DB credentials, JWT_SECRET, etc.
 npm install
-
-# Run in production mode
-npm start
-
-# Or run in development mode (auto-restart on file changes)
-npm run dev
+npm start              # Runs on port 3001 internally
 ```
 
 > **Tip:** Use a process manager like `pm2` to keep the backend alive:
@@ -87,42 +94,20 @@ npm run dev
 
 ---
 
-## Configuring the Frontend (Frontend Machine)
+## Updating Nginx Configuration
 
-Set the backend's Nginx address as the API URL in the frontend's `.env`:
-
-```env
-# frontend/.env
-VITE_API_URL=http://<backend-machine-ip>:8080
-```
-
-Then start the frontend normally:
+If you make modifications to files in `nginx/` (`parking.conf` or `parking-frontend.conf`), run the install script again to apply all changes:
 
 ```bash
-cd frontend
-npm install
-npm run dev
-```
-
----
-
-## Updating the Nginx Config
-
-If you modify `nginx/parking.conf`, apply the changes with:
-
-```bash
-sudo cp nginx/parking.conf /etc/nginx/sites-available/parking
-sudo nginx -t && sudo systemctl reload nginx
+sudo bash nginx/install.sh
 ```
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Cause & Solution |
 |---|---|
-| `502 Bad Gateway` | Express is not running. Start it with `npm start` in `backend/`. |
-| `403 Forbidden` on `/api/*` | Check if the location regex in `parking.conf` matches the path. |
-| CORS errors in browser | Confirm `VITE_API_URL` in the frontend points to the Nginx machine, not directly to port 3001. |
-| Port 8080 already in use | Edit the `listen` directive in `parking.conf` to use another port. |
-| `connect() failed (111: Connection refused)` | Express is running on the wrong interface. Ensure `app.listen` uses port 3001 (no host restriction in code needed — the firewall/Nginx handles that). |
+| `502 Bad Gateway` on Port 8080 | The Express server is not running. Start it with `npm start` in the `backend/` folder. |
+| `403 Forbidden` on Port 3000 | The frontend distribution directory `frontend/dist/` has not been built yet. Run `npm run build` inside `frontend/` and re-run `sudo bash nginx/install.sh`. |
+| Port 3000 or 8080 conflicts | Check if other services are using these ports. You can change the port bindings in `nginx/parking.conf` or `nginx/parking-frontend.conf` and re-run the installer. |

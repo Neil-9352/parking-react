@@ -17,6 +17,7 @@ Node.js/Express API and secured behind an Nginx reverse proxy.
 6. [Quick Start](#quick-start)
    - [Backend Machine Setup](#1-backend-machine-setup)
    - [Frontend Setup](#2-frontend-setup)
+   - [Production Build & Static Hosting](#3-production-build--static-hosting)
 7. [Environment Variables](#environment-variables)
    - [Backend](#backend-env)
    - [Frontend](#frontend-env)
@@ -193,9 +194,6 @@ nano .env
 
 npm install
 npm run dev        # Development server with hot-reload
-# or
-npm run build      # Build for production → dist/
-npm run preview    # Preview the production build locally
 ```
 
 > **Local dev (single machine, no Nginx):**
@@ -203,6 +201,73 @@ npm run preview    # Preview the production build locally
 > `/api`, `/uploads`, and `/receipts` requests to Express automatically.
 
 ---
+
+### 3. Production Build & Static Hosting
+
+For a stable deployment, build the frontend into static files and serve them
+with any web server. The output goes into `frontend/dist/`.
+
+#### Step 1 — Build
+
+```bash
+cd frontend
+
+# Make sure .env has the correct Nginx address before building
+# e.g.  VITE_API_URL=http://192.168.1.50:8080
+npm run build
+# Output: frontend/dist/
+```
+
+> **Important:** The `VITE_API_URL` value is baked into the bundle at build
+> time. If the backend address changes, rebuild.
+
+#### Step 2 — Serve the static files
+
+**Option A — Automated Nginx Setup (recommended)**
+
+The project includes an Nginx setup script (`nginx/install.sh`) that automatically installs both the Backend API Proxy and the Frontend Static configuration, resolving CORS and serving the app on designated ports.
+
+Run the installer:
+```bash
+sudo bash nginx/install.sh
+```
+
+Nginx will configure and host:
+* **Frontend application**: served at `http://<machine-ip>:3000`
+* **Backend API reverse proxy**: served at `http://<machine-ip>:8080` (internally forwarded to `127.0.0.1:3001`)
+
+If you edit the configs in `nginx/` later, simply re-run `sudo bash nginx/install.sh` to apply and reload all changes.
+
+---
+
+**Option B — Node `serve` package**
+
+```bash
+npm install -g serve
+serve -s frontend/dist -l 3000
+```
+
+Then open `http://<frontend-machine-ip>:3000`.
+
+To keep it running in the background with pm2:
+
+```bash
+pm2 serve frontend/dist 3000 --name parking-frontend --spa
+pm2 save
+```
+
+---
+
+**Option C — Python (quick test only)**
+
+```bash
+cd frontend/dist
+python3 -m http.server 3000
+```
+
+> Note: Python's server does not handle client-side routing. Use Option A or B
+> for any app that uses React Router (links between pages will 404 on refresh).
+
 
 ## Environment Variables
 
