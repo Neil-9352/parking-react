@@ -3,7 +3,7 @@
 This directory contains the Nginx configuration and automation script to host both the frontend static site and the backend API proxy:
 
 1. **Backend Proxy (Port 8080)**: Proxies incoming API requests to the local Express server (port 3001).
-2. **Frontend Host (Port 3000)**: Serves the compiled frontend React/Vite assets from `frontend/dist/` with routing fallbacks.
+2. **Frontend Host (Port 3005)**: Serves the compiled frontend React/Vite assets from `frontend/dist/` with routing fallbacks.
 
 This setup secures the backend by keeping it bound to `localhost` and solves CORS issues by allowing Nginx to dynamically accept requests from any origin or client IP.
 
@@ -17,7 +17,7 @@ This setup secures the backend by keeping it bound to `localhost` and solves COR
 │                                                                             │
 │     Browser Client                   Nginx Server                           │
 │   ┌────────────────┐              ┌────────────────┐                        │
-│   │                │  Port 3000   │  Static Server │                        │
+│   │                │  Port 3005   │  Static Server │                        │
 │   │  Loads UI ◄────┼──────────────┼── Serves dist/ │                        │
 │   │                │              └────────────────┘                        │
 │   │                │                                                        │
@@ -34,7 +34,7 @@ This setup secures the backend by keeping it bound to `localhost` and solves COR
 
 **Key points:**
 - The Express server binds to `127.0.0.1:3001` — it is **never reachable** directly from outside.
-- Nginx acts as the single entry point: port `3000` for frontend static files, port `8080` for backend API routes.
+- Nginx acts as the single entry point: port `3005` for frontend static files, port `8080` for backend API routes.
 - CORS is handled dynamically by Nginx, allowing flexible deployment options.
 
 ---
@@ -68,7 +68,7 @@ sudo bash nginx/install.sh
 ## Service Endpoints
 
 Once installed, Nginx serves:
-* **Frontend Web Application**: [http://localhost:3000](http://localhost:3000)
+* **Frontend Web Application**: [http://localhost:3005](http://localhost:3005)
 * **Backend API Proxy**: [http://localhost:8080/api](http://localhost:8080/api)
 * **Backend Health Check**: [http://localhost:8080/health](http://localhost:8080/health)
 
@@ -109,5 +109,5 @@ sudo bash nginx/install.sh
 | Symptom | Cause & Solution |
 |---|---|
 | `502 Bad Gateway` on Port 8080 | The Express server is not running. Start it with `npm start` in the `backend/` folder. |
-| `403 Forbidden` on Port 3000 | The frontend distribution directory `frontend/dist/` has not been built yet. Run `npm run build` inside `frontend/` and re-run `sudo bash nginx/install.sh`. |
-| Port 3000 or 8080 conflicts | Check if other services are using these ports. You can change the port bindings in `nginx/parking.conf` or `nginx/parking-frontend.conf` and re-run the installer. |
+| `403 Forbidden` on Port 3005 | The frontend distribution directory `frontend/dist/` has not been built yet. Run `npm run build` inside `frontend/` and re-run `sudo bash nginx/install.sh`. |
+| Port 3005 or 8080 conflicts | Check if other services are using these ports. You can change the port bindings in `nginx/parking.conf` or `nginx/parking-frontend.conf` and re-run the installer. |

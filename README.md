@@ -233,7 +233,7 @@ sudo bash nginx/install.sh
 ```
 
 Nginx will configure and host:
-* **Frontend application**: served at `http://<machine-ip>:3000`
+* **Frontend application**: served at `http://<machine-ip>:3005`
 * **Backend API reverse proxy**: served at `http://<machine-ip>:8080` (internally forwarded to `127.0.0.1:3001`)
 
 If you edit the configs in `nginx/` later, simply re-run `sudo bash nginx/install.sh` to apply and reload all changes.
@@ -244,15 +244,15 @@ If you edit the configs in `nginx/` later, simply re-run `sudo bash nginx/instal
 
 ```bash
 npm install -g serve
-serve -s frontend/dist -l 3000
+serve -s frontend/dist -l 3005
 ```
 
-Then open `http://<frontend-machine-ip>:3000`.
+Then open `http://<frontend-machine-ip>:3005`.
 
 To keep it running in the background with pm2:
 
 ```bash
-pm2 serve frontend/dist 3000 --name parking-frontend --spa
+pm2 serve frontend/dist 3005 --name parking-frontend --spa
 pm2 save
 ```
 
@@ -262,7 +262,7 @@ pm2 save
 
 ```bash
 cd frontend/dist
-python3 -m http.server 3000
+python3 -m http.server 3005
 ```
 
 > Note: Python's server does not handle client-side routing. Use Option A or B
