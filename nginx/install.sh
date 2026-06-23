@@ -24,6 +24,7 @@ SITES_ENABLED="/etc/nginx/sites-enabled"
 ENV_FILE="$SCRIPT_DIR/.env"
 FRONTEND_PORT=80
 BACKEND_PORT=8080
+BACKEND_HOST=127.0.0.1
 
 # ---- Colour helpers ---------------------------------------------------------
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
@@ -47,12 +48,14 @@ if [[ -f "$ENV_FILE" ]]; then
                 FRONTEND_PORT="$val"
             elif [[ "$key" == "BACKEND_PORT" ]]; then
                 BACKEND_PORT="$val"
+            elif [[ "$key" == "BACKEND_HOST" ]]; then
+                BACKEND_HOST="$val"
             fi
         fi
     done < "$ENV_FILE"
 fi
 
-info "Using ports -> Frontend: $FRONTEND_PORT, Backend Proxy: $BACKEND_PORT"
+info "Using settings -> Frontend Port: $FRONTEND_PORT, Backend Proxy: $BACKEND_HOST:$BACKEND_PORT"
 
 # ---- Pre-flight checks ------------------------------------------------------
 [[ "$EUID" -ne 0 ]] && error "Please run as root: sudo bash nginx/install.sh"
@@ -107,6 +110,8 @@ fi
 # Replace placeholders and save to sites-available
 sed -e "s|__FRONTEND_DIST__|${FRONTEND_DIST}|g" \
     -e "s|__FRONTEND_PORT__|${FRONTEND_PORT}|g" \
+    -e "s|__BACKEND_HOST__|${BACKEND_HOST}|g" \
+    -e "s|__BACKEND_PORT__|${BACKEND_PORT}|g" \
     "$FRONTEND_CONF_SRC" > "$SITES_AVAILABLE/$FRONTEND_CONF_NAME"
 info "Copied and updated frontend config → $SITES_AVAILABLE/$FRONTEND_CONF_NAME"
 
