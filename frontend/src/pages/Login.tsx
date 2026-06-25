@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import type { SyntheticEvent } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const { user, login, loading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const justRegistered = searchParams.get('registered') === '1';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -46,6 +48,13 @@ export default function Login() {
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Sign In</h2>
+
+          {/* Success banner after registration */}
+          {justRegistered && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg px-4 py-3 mb-5 text-sm flex items-center gap-2">
+              ✅ Parking lot registered successfully! Please sign in.
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-5 text-sm">
@@ -100,6 +109,15 @@ export default function Login() {
             </button>
           </form>
         </div>
+
+        {/* Register link */}
+        <p className="text-center text-sm text-slate-400 mt-5">
+          New parking lot?{' '}
+          <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
+            Register here
+          </Link>
+        </p>
+
       </div>
     </div>
   );
