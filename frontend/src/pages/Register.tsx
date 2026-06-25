@@ -2,31 +2,10 @@ import { useState } from 'react';
 import type { ChangeEvent, SyntheticEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import type { Step1, Step2, Step1Errors, Step2Errors } from './types/Register';
+import { validateStep1, validateStep2, buildRegisterFormData } from './logic/Register';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Step1 {
-  lot_name: string;
-  address: string;
-  total_slots: string;
-  fee_2w_first: string;
-  fee_2w_next: string;
-  fee_4w_first: string;
-  fee_4w_next: string;
-  layout_image: File | null;
-}
-
-interface Step2 {
-  username: string;
-  password: string;
-  confirm_password: string;
-}
-
-type Step1Errors = Partial<Record<keyof Step1, string>>;
-type Step2Errors = Partial<Record<keyof Step2, string>>;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
+// ── Style helpers (short, UI-only) ────────────────────────────────────────────
 const inputCls =
   'w-full px-4 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-colors';
 const validCls   = 'border-gray-300 focus:ring-blue-500 focus:border-blue-500';
@@ -71,32 +50,10 @@ export default function Register() {
     setS1(prev => ({ ...prev, layout_image: e.target.files?.[0] ?? null }));
   }
 
-  function validateStep1(): boolean {
-    const errs: Step1Errors = {};
-
-    if (!s1.lot_name.trim())   errs.lot_name    = 'Parking lot name is required.';
-    else if (s1.lot_name.length > 100) errs.lot_name = 'Max 100 characters.';
-
-    if (!s1.address.trim())    errs.address     = 'Address is required.';
-    else if (s1.address.length > 255) errs.address = 'Max 255 characters.';
-
-    const slots = parseInt(s1.total_slots, 10);
-    if (!s1.total_slots || isNaN(slots) || slots < 1 || slots > 1000)
-      errs.total_slots = 'Enter a number between 1 and 1000.';
-
-    const feeFields: Array<keyof Step1> = ['fee_2w_first', 'fee_2w_next', 'fee_4w_first', 'fee_4w_next'];
-    for (const k of feeFields) {
-      const v = parseFloat(s1[k] as string);
-      if (s1[k] === '' || isNaN(v) || v < 0)
-        errs[k] = 'Required, must be ≥ 0.';
-    }
-
-    setS1Err(errs);
-    return Object.keys(errs).length === 0;
-  }
-
   function goToStep2() {
-    if (validateStep1()) setStep(2);
+    const errs = validateStep1(s1);
+    setS1Err(errs);
+    if (Object.keys(errs).length === 0) setStep(2);
   }
 
   function goToStep1() {
@@ -111,46 +68,19 @@ export default function Register() {
     if (s2Err[name as keyof Step2]) setS2Err(prev => ({ ...prev, [name]: '' }));
   }
 
-  function validateStep2(): boolean {
-    const errs: Step2Errors = {};
-
-    if (!s2.username.trim())    errs.username         = 'Username is required.';
-    else if (s2.username.length > 50) errs.username   = 'Max 50 characters.';
-
-    if (!s2.password)           errs.password         = 'Password is required.';
-    else if (s2.password.length < 6) errs.password    = 'At least 6 characters.';
-
-    if (!s2.confirm_password)   errs.confirm_password = 'Please confirm your password.';
-    else if (s2.password !== s2.confirm_password)
-      errs.confirm_password = 'Passwords do not match.';
-
-    setS2Err(errs);
-    return Object.keys(errs).length === 0;
-  }
-
   // ── Submit ───────────────────────────────────────────────────────────────
 
   async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
-    if (!validateStep2()) return;
+    const errs = validateStep2(s2);
+    setS2Err(errs);
+    if (Object.keys(errs).length > 0) return;
 
     setSubmitting(true);
     setServerError('');
 
     try {
-      const formData = new FormData();
-      formData.append('lot_name',      s1.lot_name.trim());
-      formData.append('address',       s1.address.trim());
-      formData.append('total_slots',   s1.total_slots);
-      formData.append('fee_2w_first',  s1.fee_2w_first);
-      formData.append('fee_2w_next',   s1.fee_2w_next);
-      formData.append('fee_4w_first',  s1.fee_4w_first);
-      formData.append('fee_4w_next',   s1.fee_4w_next);
-      formData.append('username',      s2.username.trim());
-      formData.append('password',      s2.password);
-      formData.append('confirm_password', s2.confirm_password);
-      if (s1.layout_image) formData.append('layout_image', s1.layout_image);
-
+      const formData = buildRegisterFormData(s1, s2);
       await axios.post('/api/auth/register', formData, {
         withCredentials: true,
         headers: { 'Content-Type': 'multipart/form-data' },

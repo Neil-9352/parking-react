@@ -3,18 +3,8 @@ import axios from 'axios';
 import client from '../api/client';
 import { Modal } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
-
-interface EntryResult {
-  plate: string;
-  type: string;
-  slot: number;
-  entry_type: string;
-  early_walkin: boolean;
-  booking_id?: number;
-  cancelled_booking_id?: number;
-  refund_amount?: number;
-  displaced_booking_id?: number;
-}
+import type { EntryResult } from './types/AutoEntry';
+import { captureFrameFromVideo } from './logic/camera';
 
 export default function AutoEntry() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,17 +44,8 @@ export default function AutoEntry() {
     return () => { stopCamera(); };
   }, [startCamera, stopCamera]);
 
-  function drawToCanvas(): string {
-    const video = videoRef.current!;
-    const canvas = canvasRef.current!;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    canvas.getContext('2d')!.drawImage(video, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.85);
-  }
-
   function handleCapture() {
-    drawToCanvas();
+    captureFrameFromVideo(videoRef, canvasRef);
     setCaptured(true);
     if (videoRef.current) videoRef.current.style.display = 'none';
     if (canvasRef.current) canvasRef.current.style.display = 'block';
@@ -80,7 +61,7 @@ export default function AutoEntry() {
   async function handleSubmit() {
     setLoading(true);
     setErrorMsg('');
-    const image_base64 = drawToCanvas();
+    const image_base64 = captureFrameFromVideo(videoRef, canvasRef);
     try {
       const res = await client.post('/vehicles/auto-entry', { image_base64 });
       setResult(res.data);

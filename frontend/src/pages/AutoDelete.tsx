@@ -3,20 +3,8 @@ import axios from 'axios';
 import client, { API_BASE_URL } from '../api/client';
 import { Modal } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
-
-interface RemoveResult {
-  status: 'removed' | 'no_match';
-  plate: string;
-  type?: string;
-  slot?: number;
-  duration_hours?: number;
-  charge?: number;
-  receipt_filename?: string;
-  booking_id?: number;
-  booking_amount?: number;
-  refund_status?: string;
-  message?: string;
-}
+import type { RemoveResult } from './types/AutoDelete';
+import { captureFrameFromVideo } from './logic/camera';
 
 export default function AutoDelete() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -57,17 +45,8 @@ export default function AutoDelete() {
     return () => { stopCamera(); };
   }, [startCamera, stopCamera]);
 
-  function drawToCanvas(): string {
-    const video = videoRef.current!;
-    const canvas = canvasRef.current!;
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
-    canvas.getContext('2d')!.drawImage(video, 0, 0);
-    return canvas.toDataURL('image/jpeg', 0.85);
-  }
-
   function handleCapture() {
-    drawToCanvas();
+    captureFrameFromVideo(videoRef, canvasRef);
     setCaptured(true);
     if (videoRef.current) videoRef.current.style.display = 'none';
     if (canvasRef.current) canvasRef.current.style.display = 'block';
@@ -85,7 +64,7 @@ export default function AutoDelete() {
     setLoading(true);
     setErrorMsg('');
     setNoMatchInfo(null);
-    const image_base64 = drawToCanvas();
+    const image_base64 = captureFrameFromVideo(videoRef, canvasRef);
     try {
       const res = await client.post('/vehicles/auto-delete', { image_base64 });
       const data: RemoveResult = res.data;

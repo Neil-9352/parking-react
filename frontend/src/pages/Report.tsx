@@ -1,28 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { SyntheticEvent } from 'react';
 import client, { API_BASE_URL } from '../api/client';
-
-interface ParkingRecord {
-  id: number;
-  registration_number: string;
-  type?: string;
-  slot_id: number;
-  in_time: string;
-  out_time?: string;
-  fee?: number;
-  fee_id: number;
-  receipt_path?: string;
-}
-
-interface FeeRow {
-  fee_id: number;
-  vehicle_type: string;
-  first_hour_charge: number;
-  rest_hour_charge: number;
-  created_at: string;
-}
-
-type SortDir = 'asc' | 'desc';
+import type { ParkingRecord, FeeRow, SortDir } from './types/Report';
+import { buildReportParams, formatDateTime } from './logic/Report';
 
 // ── Paginator ──────────────────────────────────────────────────────────────
 function Paginator({
@@ -168,15 +148,10 @@ export default function Report() {
 
   // Build full param object from current state + overrides
   function buildParams(overrides: Record<string, string> = {}): Record<string, string> {
-    const p: Record<string, string> = {
-      ...activeFilters,
-      page: String(page),
-      fee_page: String(feePage),
-      ...(sortBy ? { sort_by: sortBy, sort_dir: sortDir } : {}),
-      ...(feeSortBy ? { fee_sort_by: feeSortBy, fee_sort_dir: feeSortDir } : {}),
-      ...overrides,
-    };
-    return p;
+    return buildReportParams(
+      { activeFilters, page, feePage, sortBy, sortDir, feeSortBy, feeSortDir },
+      overrides,
+    );
   }
 
   useEffect(() => {
@@ -229,12 +204,6 @@ export default function Report() {
     setFeeSortBy(col);
     setFeeSortDir(newDir);
     fetchReports(buildParams({ fee_sort_by: col, fee_sort_dir: newDir, fee_page: '1' }));
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────
-  function fmt(dt?: string) {
-    if (!dt) return '—';
-    return new Date(dt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
   }
 
   const thBase = 'bg-gray-900 text-white';
@@ -323,8 +292,8 @@ export default function Report() {
                     <td className="px-4 py-3 font-mono font-medium text-gray-900">{row.registration_number}</td>
                     <td className="px-4 py-3 text-gray-600">{row.type || '—'}</td>
                     <td className="px-4 py-3 text-gray-600">{row.slot_id}</td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmt(row.in_time)}</td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{row.out_time ? fmt(row.out_time) : '—'}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(row.in_time)}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{row.out_time ? formatDateTime(row.out_time) : '—'}</td>
                     <td className="px-4 py-3 font-semibold text-gray-900">
                       {row.fee != null ? `₹${parseFloat(String(row.fee)).toFixed(2)}` : '—'}
                     </td>
@@ -376,7 +345,7 @@ export default function Report() {
                     <td className="px-4 py-3 font-medium">{f.vehicle_type}</td>
                     <td className="px-4 py-3">₹{parseFloat(String(f.first_hour_charge)).toFixed(2)}</td>
                     <td className="px-4 py-3">₹{parseFloat(String(f.rest_hour_charge)).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-gray-500">{fmt(f.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-500">{formatDateTime(f.created_at)}</td>
                   </tr>
                 ))}
               </tbody>

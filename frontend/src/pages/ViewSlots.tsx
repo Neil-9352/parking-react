@@ -3,42 +3,13 @@ import axios from 'axios';
 import client, { API_BASE_URL } from '../api/client';
 import { Modal } from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
-
-interface Slot {
-  slot_id: number;
-  slot_no: number;
-  status: 'occupied' | 'unoccupied' | 'booked';
-  registration_number?: string;
-  type?: string;
-  in_time?: string;
-  booking_id?: number;
-  booked_reg?: string;
-  expected_start_time?: string;
-  expected_end_time?: string;
-  booked_type?: string;
-}
-
-interface ReceiptData {
-  registration_number: string;
-  vehicle_type: string;
-  hours_parked: number;
-  fee: number;
-  receipt_filename: string;
-}
-
-function getDisplayStatus(slot: Slot): 'occupied' | 'booked' | 'unoccupied' {
-  if (slot.status === 'occupied') return 'occupied';
-  if (slot.booking_id) return 'booked';
-  return 'unoccupied';
-}
-
-function slotColors(status: string) {
-  switch (status) {
-    case 'occupied': return 'border-red-300 bg-red-50';
-    case 'booked': return 'border-amber-300 bg-amber-50';
-    default: return 'border-emerald-300 bg-emerald-50';
-  }
-}
+import type { Slot, ReceiptData } from './types/ViewSlots';
+import {
+  getDisplayStatus,
+  slotColors,
+  slotIcon,
+  formatSlotDateTime,
+} from './logic/ViewSlots';
 
 function StatusBadge({ status }: { status: string }) {
   switch (status) {
@@ -46,17 +17,6 @@ function StatusBadge({ status }: { status: string }) {
     case 'booked': return <span className="px-1.5 py-0.5 text-xs font-bold bg-amber-500 text-white rounded-full">Booked</span>;
     default: return <span className="px-1.5 py-0.5 text-xs font-bold bg-emerald-600 text-white rounded-full">Free</span>;
   }
-}
-
-function slotIcon(slot: Slot, displayStatus: string) {
-  if (displayStatus === 'occupied') return slot.type === '2-wheeler' ? '🏍️' : '🚗';
-  if (displayStatus === 'booked') return slot.booked_type === '2-wheeler' ? '🏍️' : '🚗';
-  return '🅿️';
-}
-
-function fmt(dt?: string) {
-  if (!dt) return '—';
-  return new Date(dt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 export default function ViewSlots() {
@@ -181,7 +141,7 @@ export default function ViewSlots() {
                 {displayStatus === 'occupied' && (
                   <div className="text-xs space-y-1">
                     <p className="font-mono font-bold text-gray-800 truncate">{slot.registration_number}</p>
-                    <p className="text-gray-500 truncate text-xs">{fmt(slot.in_time)}</p>
+                    <p className="text-gray-500 truncate text-xs">{formatSlotDateTime(slot.in_time)}</p>
                     <button
                       onClick={() => handleRemoveClick(slot)}
                       className="w-full mt-1.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors"
@@ -194,7 +154,7 @@ export default function ViewSlots() {
                 {displayStatus === 'booked' && (
                   <div className="text-xs space-y-0.5">
                     <p className="font-mono font-bold text-gray-800 truncate">{slot.booked_reg}</p>
-                    <p className="text-gray-500 text-xs truncate">From: {fmt(slot.expected_start_time)}</p>
+                    <p className="text-gray-500 text-xs truncate">From: {formatSlotDateTime(slot.expected_start_time)}</p>
                   </div>
                 )}
 
