@@ -48,7 +48,6 @@ async function manualEntry(req, res) {
   }
 
   const plate = reg_number.toUpperCase().trim();
-  const in_time = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const conn = await pool.getConnection();
   try {
@@ -170,10 +169,10 @@ async function manualEntry(req, res) {
     }
     const fee_id = feeRows[0].fee_id;
 
-    // Insert parks_in
+    // Insert parks_in (use MySQL NOW() so the timestamp matches the DB timezone)
     await conn.query(
-      `INSERT INTO parks_in (registration_number, slot_id, lot_id, in_time, fee_id) VALUES (?, ?, ?, ?, ?)`,
-      [plate, final_slot_id, lot_id, in_time, fee_id]
+      `INSERT INTO parks_in (registration_number, slot_id, lot_id, in_time, fee_id) VALUES (?, ?, ?, NOW(), ?)`,
+      [plate, final_slot_id, lot_id, fee_id]
     );
 
     // Mark slot occupied
@@ -227,7 +226,6 @@ async function autoEntry(req, res) {
 
   const plate = anprData.plate.toUpperCase().trim();
   let vehicle_type = TYPE_MAP[anprData.type.toLowerCase().trim()] || '4-wheeler';
-  const in_time = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const conn = await pool.getConnection();
   try {
@@ -363,10 +361,10 @@ async function autoEntry(req, res) {
     }
     const fee_id = feeRows[0].fee_id;
 
-    // Insert parks_in
+    // Insert parks_in (use MySQL NOW() so the timestamp matches the DB timezone)
     await conn.query(
-      `INSERT INTO parks_in (registration_number, slot_id, lot_id, in_time, fee_id) VALUES (?, ?, ?, ?, ?)`,
-      [plate, slot_id, lot_id, in_time, fee_id]
+      `INSERT INTO parks_in (registration_number, slot_id, lot_id, in_time, fee_id) VALUES (?, ?, ?, NOW(), ?)`,
+      [plate, slot_id, lot_id, fee_id]
     );
 
     // Mark slot occupied
@@ -416,7 +414,6 @@ async function autoDelete(req, res) {
   }
 
   const plate = anprData.plate.toUpperCase().trim();
-  const out_time = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const conn = await pool.getConnection();
   try {
@@ -445,19 +442,20 @@ async function autoDelete(req, res) {
 
     const { id: parks_in_id, slot_id, in_time, slot_no } = records[0];
 
-    // Calculate fee
+    // Calculate fee using MySQL NOW() so it matches the DB timezone
     const [feeRows] = await conn.query(`
       SELECT
         v.type,
-        CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 60) AS minutes_parked,
-        GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) AS hours_parked,
+        NOW() AS out_time,
+        CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 60) AS minutes_parked,
+        GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) AS hours_parked,
         f.first_hour_charge,
         f.rest_hour_charge,
         CASE
-          WHEN GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) = 1
+          WHEN GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) = 1
           THEN f.first_hour_charge
           ELSE f.first_hour_charge +
-               (GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) - 1)
+               (GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) - 1)
                * f.rest_hour_charge
         END AS parking_fee
       FROM parks_in pi
@@ -465,15 +463,16 @@ async function autoDelete(req, res) {
       JOIN fee f ON pi.fee_id = f.fee_id
       WHERE pi.id = ?
       LIMIT 1
-    `, [out_time, out_time, out_time, out_time, parks_in_id]);
+    `, [parks_in_id]);
 
     const feeData = feeRows[0];
 
-    // Update parks_in
+    // Update parks_in using NOW() to keep timezone consistent
     await conn.query(
-      'UPDATE parks_in SET out_time = ?, fee = ? WHERE id = ?',
-      [out_time, feeData.parking_fee, parks_in_id]
+      'UPDATE parks_in SET out_time = NOW(), fee = ? WHERE id = ?',
+      [feeData.parking_fee, parks_in_id]
     );
+    const out_time = feeData.out_time; // read back the DB-generated timestamp for the receipt
 
     // Smart slot restoration
     const [futureBooking] = await conn.query(
@@ -508,8 +507,8 @@ async function autoDelete(req, res) {
     const receiptData = {
       plate,
       vehicleType: feeData.type,
-      inTime: in_time,
-      outTime: out_time,
+      inTime: in_time,     // from DB record (already DB-timezone)
+      outTime: out_time,   // from feeData.out_time (DB NOW())
       minutesParked: feeData.minutes_parked,
       hoursParked: feeData.hours_parked,
       firstHourCharge: feeData.first_hour_charge,
