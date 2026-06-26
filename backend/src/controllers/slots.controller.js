@@ -75,40 +75,58 @@ async function getBookings(req, res) {
     const conditions = ['ps.lot_id = ?'];
     const params = [lot_id];
 
+    const countConditions = ['ps.lot_id = ?'];
+    const countParams = [lot_id];
+
     // Date filters
     if (date) {
       conditions.push('DATE(b.expected_start_time) = ?');
       params.push(date);
+      countConditions.push('DATE(b.expected_start_time) = ?');
+      countParams.push(date);
     } else {
       if (from_date) {
         conditions.push('DATE(b.expected_start_time) >= ?');
         params.push(from_date);
+        countConditions.push('DATE(b.expected_start_time) >= ?');
+        countParams.push(from_date);
       }
       if (to_date) {
         conditions.push('DATE(b.expected_start_time) <= ?');
         params.push(to_date);
+        countConditions.push('DATE(b.expected_start_time) <= ?');
+        countParams.push(to_date);
       }
     }
 
     // Text / enum filters
     if (reg_number) {
+      const regLike = `%${reg_number.trim().toUpperCase()}%`;
       conditions.push('b.registration_number LIKE ?');
-      params.push(`%${reg_number.trim().toUpperCase()}%`);
+      params.push(regLike);
+      countConditions.push('b.registration_number LIKE ?');
+      countParams.push(regLike);
     }
     if (vehicle_type) {
       conditions.push('v.type = ?');
       params.push(vehicle_type);
-    }
-    if (booking_status) {
-      conditions.push('b.booking_status = ?');
-      params.push(booking_status);
+      countConditions.push('v.type = ?');
+      countParams.push(vehicle_type);
     }
     if (refund_status) {
       conditions.push('b.refund_status = ?');
       params.push(refund_status);
+      countConditions.push('b.refund_status = ?');
+      countParams.push(refund_status);
+    }
+
+    if (booking_status) {
+      conditions.push('b.booking_status = ?');
+      params.push(booking_status);
     }
 
     const whereClause = conditions.join(' AND ');
+    const countWhereClause = countConditions.join(' AND ');
 
     // COUNT query – same WHERE, no LIMIT
     const [[{ total }]] = await pool.query(`
@@ -119,6 +137,29 @@ async function getBookings(req, res) {
       LEFT JOIN user u     ON u.user_id = b.user_id
       WHERE ${whereClause}
     `, params);
+
+    // Status counts query (ignoring booking_status)
+    const [statusCountsRows] = await pool.query(`
+      SELECT b.booking_status, COUNT(*) AS count
+      FROM books b
+      JOIN parking_slot ps ON b.slot_id = ps.slot_id
+      LEFT JOIN vehicle v  ON v.registration_number = b.registration_number
+      LEFT JOIN user u     ON u.user_id = b.user_id
+      WHERE ${countWhereClause}
+      GROUP BY b.booking_status
+    `, countParams);
+
+    const counts = {
+      ACTIVE: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      NO_SHOW: 0
+    };
+    statusCountsRows.forEach(row => {
+      if (counts[row.booking_status] !== undefined) {
+        counts[row.booking_status] = row.count;
+      }
+    });
 
     // Paginated data query
     const [bookings] = await pool.query(`
@@ -146,7 +187,7 @@ async function getBookings(req, res) {
       LIMIT ? OFFSET ?
     `, [...params, limitNum, offset]);
 
-    return res.status(200).json({ bookings, total, page: pageNum, limit: limitNum });
+    return res.status(200).json({ bookings, total, page: pageNum, limit: limitNum, counts });
   } catch (err) {
     console.error('Get bookings error:', err);
     return res.status(500).json({ error: 'Failed to fetch bookings' });

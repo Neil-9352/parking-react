@@ -98,6 +98,13 @@ export default function Bookings() {
   // Active = committed filters that were last applied/reset
   const [active, setActive] = useState<BookingFilterState>({ ...EMPTY_FILTER, date: todayStr() });
 
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({
+    ACTIVE: 0,
+    COMPLETED: 0,
+    CANCELLED: 0,
+    NO_SHOW: 0,
+  });
+
   const { addToast, ToastContainer } = useToast();
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -121,6 +128,9 @@ export default function Bookings() {
       setBookings(res.data.bookings);
       setTotal(res.data.total);
       setPage(res.data.page);
+      if (res.data.counts) {
+        setStatusCounts(res.data.counts);
+      }
     } catch {
       addToast('Failed to load bookings', 'error');
     } finally {
@@ -212,7 +222,7 @@ export default function Bookings() {
               className={`p-4 text-center transition-colors hover:bg-gray-50 ${statusTab === s ? 'ring-2 ring-inset ring-indigo-400 bg-indigo-50' : ''}`}
             >
               <p className={`text-2xl font-bold ${statusCountColor(s)}`}>
-                {statusTab === s ? total : '—'}
+                {statusCounts[s] ?? 0}
               </p>
               <p className="text-xs text-gray-500 mt-1 font-medium">{STATUS_CONFIG[s].label}</p>
             </button>
