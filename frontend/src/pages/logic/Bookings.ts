@@ -27,9 +27,7 @@ export interface BookingFilterState {
   vehicleType: string;   // '' | '2-wheeler' | '4-wheeler'
   bookingStatus: string; // '' | ACTIVE | COMPLETED | CANCELLED | NO_SHOW
   refundStatus: string;  // '' | PENDING | REFUNDED | NOT_APPLICABLE
-  date: string;          // YYYY-MM-DD (exact date – overrides from/to)
-  fromDate: string;      // YYYY-MM-DD
-  toDate: string;        // YYYY-MM-DD
+  date: string;          // YYYY-MM-DD (exact date)
 }
 
 export const EMPTY_FILTER: BookingFilterState = {
@@ -38,8 +36,6 @@ export const EMPTY_FILTER: BookingFilterState = {
   bookingStatus: '',
   refundStatus: '',
   date: '',
-  fromDate: '',
-  toDate: '',
 };
 
 export const PAGE_LIMIT = 10;
@@ -58,12 +54,8 @@ export function buildBookingParams(
   if (filters.bookingStatus) p.booking_status = filters.bookingStatus;
   if (filters.refundStatus)  p.refund_status  = filters.refundStatus;
 
-  // Exact date takes priority; otherwise use range
   if (filters.date) {
     p.date = filters.date;
-  } else {
-    if (filters.fromDate) p.from_date = filters.fromDate;
-    if (filters.toDate)   p.to_date   = filters.toDate;
   }
 
   p.page  = String(page);
@@ -81,8 +73,7 @@ export function pageRangeLabel(page: number, limit: number, total: number): stri
 
 /** Returns true if any filter is currently active. */
 export function hasActiveFilters(f: BookingFilterState): boolean {
-  return !!(f.regNumber || f.vehicleType || f.bookingStatus || f.refundStatus
-         || f.date || f.fromDate || f.toDate);
+  return !!(f.regNumber || f.vehicleType || f.bookingStatus || f.refundStatus || f.date);
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────

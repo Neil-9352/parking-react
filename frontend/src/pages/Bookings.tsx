@@ -146,7 +146,7 @@ export default function Bookings() {
   }
 
   function handleReset() {
-    const reset = { ...EMPTY_FILTER, date: todayStr() };
+    const reset = EMPTY_FILTER;
     setDraft(reset);
     setActive(reset);
     setStatusTab('');
@@ -172,9 +172,7 @@ export default function Bookings() {
 
   const activeDateLabel = active.date
     ? `for ${fmtDate(active.date)}`
-    : active.fromDate || active.toDate
-      ? `${active.fromDate ? fmtDate(active.fromDate) : '…'} → ${active.toDate ? fmtDate(active.toDate) : '…'}`
-      : 'all dates';
+    : 'all dates';
 
   const inputClass =
     'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400';
@@ -290,41 +288,14 @@ export default function Bookings() {
             </select>
           </div>
 
-          {/* Exact date */}
+          {/* Date */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">
-              Specific Date
-              {(draft.fromDate || draft.toDate) && <span className="ml-1 text-gray-400">(overrides range)</span>}
-            </label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
             <input
               type="date"
               value={draft.date}
               onChange={e => set('date', e.target.value)}
               className={inputClass}
-            />
-          </div>
-
-          {/* From date */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">From Date</label>
-            <input
-              type="date"
-              value={draft.fromDate}
-              onChange={e => set('fromDate', e.target.value)}
-              disabled={!!draft.date}
-              className={inputClass + (draft.date ? ' opacity-40 cursor-not-allowed' : '')}
-            />
-          </div>
-
-          {/* To date */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">To Date</label>
-            <input
-              type="date"
-              value={draft.toDate}
-              onChange={e => set('toDate', e.target.value)}
-              disabled={!!draft.date}
-              className={inputClass + (draft.date ? ' opacity-40 cursor-not-allowed' : '')}
             />
           </div>
         </div>
