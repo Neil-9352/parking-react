@@ -7,10 +7,31 @@ import { useToast } from '../components/ui/Toast';
 export default function ManualEntry() {
   const [slots, setSlots] = useState<number[]>([]);
   const [regNumber, setRegNumber] = useState('');
-  const [vehicleType, setVehicleType] = useState('2-wheeler');
+  const [vehicleType, setVehicleType] = useState('');
   const [slotNo, setSlotNo] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const { addToast, ToastContainer } = useToast();
+
+  const handleRegBlur = async () => {
+    const val = regNumber.trim();
+    if (!val) return;
+    try {
+      const res = await client.get<{ vehicle_type: string | null; booking: { booking_id: number; slot_no: number } | null }>(`/vehicles/lookup/${val}`);
+      if (res.data.vehicle_type) {
+        setVehicleType(res.data.vehicle_type);
+      }
+      if (res.data.booking) {
+        const bookedSlot = res.data.booking.slot_no;
+        setSlots(prev => {
+          if (prev.includes(bookedSlot)) return prev;
+          return [...prev, bookedSlot].sort((a, b) => a - b);
+        });
+        setSlotNo(String(bookedSlot));
+      }
+    } catch (err) {
+      console.error('Vehicle lookup failed', err);
+    }
+  };
 
   const loadSlots = useCallback(async () => {
     try {
@@ -30,6 +51,7 @@ export default function ManualEntry() {
 
   async function handleSubmit(e: SyntheticEvent) {
     e.preventDefault();
+    if (!vehicleType) { addToast('Please select vehicle type', 'error'); return; }
     if (!slotNo) { addToast('Please select a slot', 'error'); return; }
     setSubmitting(true);
     try {
@@ -40,6 +62,7 @@ export default function ManualEntry() {
       });
       addToast('Vehicle parked successfully!', 'success');
       setRegNumber('');
+      setVehicleType('');
       setSlotNo('');
       await loadSlots();
     } catch (err) {
@@ -72,6 +95,7 @@ export default function ManualEntry() {
               required
               value={regNumber}
               onChange={e => setRegNumber(e.target.value.toUpperCase())}
+              onBlur={handleRegBlur}
               placeholder="e.g. AS01AB1234"
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 font-mono uppercase"
             />
@@ -83,10 +107,12 @@ export default function ManualEntry() {
             </label>
             <select
               id="vehicle_type"
+              required
               value={vehicleType}
               onChange={e => setVehicleType(e.target.value)}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 bg-white"
             >
+              <option value="" disabled>-- Select vehicle type --</option>
               <option value="2-wheeler">🏍️ 2-Wheeler (Bike / Scooter)</option>
               <option value="4-wheeler">🚗 4-Wheeler (Car / SUV)</option>
             </select>

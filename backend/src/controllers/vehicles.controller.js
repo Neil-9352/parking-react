@@ -548,4 +548,46 @@ async function autoDelete(req, res) {
   }
 }
 
-module.exports = { getAvailableSlots, manualEntry, autoEntry, autoDelete };
+// GET /api/vehicles/lookup/:plate
+async function lookupVehicle(req, res) {
+  const lot_id = req.admin.lot_id;
+  const plate = req.params.plate.toUpperCase().trim();
+
+  try {
+    // 1. Get vehicle type
+    const [vehicleRows] = await pool.query(
+      `SELECT type FROM vehicle WHERE registration_number = ?`,
+      [plate]
+    );
+    const vehicleType = vehicleRows.length > 0 ? vehicleRows[0].type : null;
+
+    // 2. Check for active/ongoing booking (within ±15 min window)
+    const [bookRows] = await pool.query(`
+      SELECT b.booking_id, b.slot_id, ps.slot_no
+      FROM books b
+      JOIN parking_slot ps ON b.slot_id = ps.slot_id
+      WHERE b.registration_number = ?
+      AND b.booking_status = 'ACTIVE'
+      AND NOW() BETWEEN DATE_SUB(b.expected_start_time, INTERVAL 15 MINUTE)
+                    AND DATE_ADD(b.expected_start_time, INTERVAL 15 MINUTE)
+      AND ps.lot_id = ?
+      ORDER BY b.expected_start_time ASC
+      LIMIT 1
+    `, [plate, lot_id]);
+
+    const booking = bookRows.length > 0 ? {
+      booking_id: bookRows[0].booking_id,
+      slot_no: bookRows[0].slot_no
+    } : null;
+
+    return res.status(200).json({
+      vehicle_type: vehicleType,
+      booking: booking
+    });
+  } catch (err) {
+    console.error('Lookup vehicle error:', err);
+    return res.status(500).json({ error: 'Failed to look up vehicle info' });
+  }
+}
+
+module.exports = { getAvailableSlots, manualEntry, autoEntry, autoDelete, lookupVehicle };
