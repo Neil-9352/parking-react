@@ -61,6 +61,14 @@ async function manualEntry(req, res) {
       return res.status(409).json({ error: 'Vehicle is already parked' });
     }
 
+    // Pre-mark any no-show bookings for this vehicle (arrived too late, >15 min past start)
+    await pool.query(
+      `UPDATE books SET booking_status = 'NO_SHOW', refund_status = 'NOT_APPLICABLE'
+       WHERE registration_number = ? AND booking_status = 'ACTIVE'
+       AND DATE_ADD(expected_start_time, INTERVAL 15 MINUTE) < NOW()`,
+      [plate]
+    );
+
     await conn.beginTransaction();
 
     // Insert vehicle if not exists
@@ -69,15 +77,88 @@ async function manualEntry(req, res) {
       [plate, vehicle_type]
     );
 
-    // Get slot_id
-    const [slotRows] = await conn.query(
-      `SELECT slot_id FROM parking_slot WHERE slot_no = ? AND lot_id = ? AND status = 'unoccupied' FOR UPDATE`,
-      [slot_no, lot_id]
-    );
-    if (slotRows.length === 0) {
-      throw new Error('Invalid or unavailable slot selected');
+    let final_slot_id = null;
+    let final_slot_no = slot_no;
+    let entry_type = 'walk-in';
+    let booking_id = null;
+    let early_walkin = false;
+    let cancelled_booking_id = null;
+    let refund_amount = null;
+
+    // --- Check for on-time booking (within ±15 min of expected_start_time) ---
+    const [bookRows] = await conn.query(`
+      SELECT b.booking_id, b.slot_id, ps.slot_no
+      FROM books b
+      JOIN parking_slot ps ON b.slot_id = ps.slot_id
+      WHERE b.registration_number = ?
+      AND b.booking_status = 'ACTIVE'
+      AND NOW() BETWEEN DATE_SUB(b.expected_start_time, INTERVAL 15 MINUTE)
+                    AND DATE_ADD(b.expected_start_time, INTERVAL 15 MINUTE)
+      AND ps.lot_id = ?
+      ORDER BY b.expected_start_time ASC
+      LIMIT 1
+      FOR UPDATE
+    `, [plate, lot_id]);
+
+    if (bookRows.length > 0) {
+      // On-time arrival: assign the booked slot, ignoring the UI-selected slot
+      booking_id = bookRows[0].booking_id;
+      final_slot_id = bookRows[0].slot_id;
+      final_slot_no = bookRows[0].slot_no;
+      entry_type = 'booked';
+
+      // Lock and verify booked slot is still in 'booked' state
+      const [bookedSlotRows] = await conn.query(
+        `SELECT slot_id FROM parking_slot WHERE slot_id = ? AND lot_id = ? AND status = 'booked' FOR UPDATE`,
+        [final_slot_id, lot_id]
+      );
+      if (bookedSlotRows.length === 0) {
+        throw new Error('Booked slot is no longer available');
+      }
+    } else {
+      // --- Check for early arrival (booking exists but >15 min before start) ---
+      const [earlyRows] = await conn.query(`
+        SELECT b.booking_id, b.booking_amount
+        FROM books b
+        JOIN parking_slot ps ON b.slot_id = ps.slot_id
+        WHERE b.registration_number = ?
+        AND b.booking_status = 'ACTIVE'
+        AND NOW() < DATE_SUB(b.expected_start_time, INTERVAL 15 MINUTE)
+        AND ps.lot_id = ?
+        ORDER BY b.expected_start_time ASC
+        LIMIT 1
+        FOR UPDATE
+      `, [plate, lot_id]);
+
+      if (earlyRows.length > 0) {
+        // Early arrival: cancel booking with 90% refund, proceed as walk-in on requested slot
+        cancelled_booking_id = earlyRows[0].booking_id;
+        const booking_amount = parseFloat(earlyRows[0].booking_amount);
+        refund_amount = parseFloat((booking_amount * 0.90).toFixed(2));
+        await conn.query(
+          `UPDATE books
+           SET booking_status = 'CANCELLED',
+               refund_status = 'REFUNDED',
+               refund_percentage = 90,
+               refund_amount = ?,
+               cancellation_time = NOW()
+           WHERE booking_id = ?`,
+          [refund_amount, cancelled_booking_id]
+        );
+        early_walkin = true;
+      }
+
+      // Use the manually-selected slot for walk-in
+      const [slotRows] = await conn.query(
+        `SELECT slot_id FROM parking_slot WHERE slot_no = ? AND lot_id = ? AND status = 'unoccupied' FOR UPDATE`,
+        [slot_no, lot_id]
+      );
+      if (slotRows.length === 0) {
+        throw new Error('Invalid or unavailable slot selected');
+      }
+      final_slot_id = slotRows[0].slot_id;
+      final_slot_no = slot_no;
     }
-    const slot_id = slotRows[0].slot_id;
 
     // Get latest fee
     const [feeRows] = await conn.query(
@@ -92,17 +173,25 @@ async function manualEntry(req, res) {
     // Insert parks_in
     await conn.query(
       `INSERT INTO parks_in (registration_number, slot_id, lot_id, in_time, fee_id) VALUES (?, ?, ?, ?, ?)`,
-      [plate, slot_id, lot_id, in_time, fee_id]
+      [plate, final_slot_id, lot_id, in_time, fee_id]
     );
 
     // Mark slot occupied
     await conn.query(
       `UPDATE parking_slot SET status = 'occupied' WHERE slot_id = ? AND lot_id = ?`,
-      [slot_id, lot_id]
+      [final_slot_id, lot_id]
     );
 
     await conn.commit();
-    return res.status(200).json({ message: 'Vehicle parked successfully', plate, slot_no });
+
+    const response = { message: 'Vehicle parked successfully', plate, slot_no: final_slot_no, entry_type };
+    if (booking_id) response.booking_id = booking_id;
+    if (early_walkin) {
+      response.early_walkin = true;
+      response.cancelled_booking_id = cancelled_booking_id;
+      response.refund_amount = refund_amount;
+    }
+    return res.status(200).json(response);
   } catch (err) {
     await conn.rollback();
     console.error('Manual entry error:', err);
@@ -208,10 +297,17 @@ async function autoEntry(req, res) {
 
       if (earlyRows.length > 0) {
         cancelled_booking_id = earlyRows[0].booking_id;
-        refund_amount = parseFloat((earlyRows[0].booking_amount * 0.90).toFixed(2));
+        const booking_amount = parseFloat(earlyRows[0].booking_amount);
+        refund_amount = parseFloat((booking_amount * 0.90).toFixed(2));
         await conn.query(
-          `UPDATE books SET booking_status = 'CANCELLED', refund_status = 'REFUNDED' WHERE booking_id = ?`,
-          [cancelled_booking_id]
+          `UPDATE books
+           SET booking_status = 'CANCELLED',
+               refund_status = 'REFUNDED',
+               refund_percentage = 90,
+               refund_amount = ?,
+               cancellation_time = NOW()
+           WHERE booking_id = ?`,
+          [refund_amount, cancelled_booking_id]
         );
         early_walkin = true;
       }
