@@ -52,18 +52,75 @@ async function getSlots(req, res) {
   }
 }
 
-// GET /api/slots/bookings?date=YYYY-MM-DD
+// GET /api/slots/bookings?date=&reg_number=&vehicle_type=&booking_status=&refund_status=&from_date=&to_date=&page=&limit=
 async function getBookings(req, res) {
   const lot_id = req.admin.lot_id;
-  const { date } = req.query; // optional date filter, e.g. '2026-06-26'
+  const {
+    date,           // exact date (YYYY-MM-DD) – takes priority over from/to
+    from_date,      // date range start
+    to_date,        // date range end
+    reg_number,     // partial match on registration plate
+    vehicle_type,   // '2-wheeler' | '4-wheeler'
+    booking_status, // ACTIVE | COMPLETED | CANCELLED | NO_SHOW
+    refund_status,  // PENDING | REFUNDED | NOT_APPLICABLE
+    page  = '1',
+    limit = '10',
+  } = req.query;
+
+  const pageNum  = Math.max(1, parseInt(page,  10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+  const offset   = (pageNum - 1) * limitNum;
 
   try {
-    // Build optional date condition
-    const dateCondition = date
-      ? `AND DATE(b.expected_start_time) = ?`
-      : '';
-    const params = date ? [lot_id, date] : [lot_id];
+    const conditions = ['ps.lot_id = ?'];
+    const params = [lot_id];
 
+    // Date filters
+    if (date) {
+      conditions.push('DATE(b.expected_start_time) = ?');
+      params.push(date);
+    } else {
+      if (from_date) {
+        conditions.push('DATE(b.expected_start_time) >= ?');
+        params.push(from_date);
+      }
+      if (to_date) {
+        conditions.push('DATE(b.expected_start_time) <= ?');
+        params.push(to_date);
+      }
+    }
+
+    // Text / enum filters
+    if (reg_number) {
+      conditions.push('b.registration_number LIKE ?');
+      params.push(`%${reg_number.trim().toUpperCase()}%`);
+    }
+    if (vehicle_type) {
+      conditions.push('v.type = ?');
+      params.push(vehicle_type);
+    }
+    if (booking_status) {
+      conditions.push('b.booking_status = ?');
+      params.push(booking_status);
+    }
+    if (refund_status) {
+      conditions.push('b.refund_status = ?');
+      params.push(refund_status);
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // COUNT query – same WHERE, no LIMIT
+    const [[{ total }]] = await pool.query(`
+      SELECT COUNT(*) AS total
+      FROM books b
+      JOIN parking_slot ps ON b.slot_id = ps.slot_id
+      LEFT JOIN vehicle v  ON v.registration_number = b.registration_number
+      LEFT JOIN user u     ON u.user_id = b.user_id
+      WHERE ${whereClause}
+    `, params);
+
+    // Paginated data query
     const [bookings] = await pool.query(`
       SELECT
         b.booking_id,
@@ -84,12 +141,12 @@ async function getBookings(req, res) {
       JOIN parking_slot ps ON b.slot_id = ps.slot_id
       LEFT JOIN vehicle v  ON v.registration_number = b.registration_number
       LEFT JOIN user u     ON u.user_id = b.user_id
-      WHERE ps.lot_id = ?
-      ${dateCondition}
+      WHERE ${whereClause}
       ORDER BY b.expected_start_time DESC
-    `, params);
+      LIMIT ? OFFSET ?
+    `, [...params, limitNum, offset]);
 
-    return res.status(200).json(bookings);
+    return res.status(200).json({ bookings, total, page: pageNum, limit: limitNum });
   } catch (err) {
     console.error('Get bookings error:', err);
     return res.status(500).json({ error: 'Failed to fetch bookings' });
