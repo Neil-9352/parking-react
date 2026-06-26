@@ -8,6 +8,7 @@ import AutoEntry from './pages/AutoEntry';
 import AutoDelete from './pages/AutoDelete';
 import ManualEntry from './pages/ManualEntry';
 import ViewSlots from './pages/ViewSlots';
+import Bookings from './pages/Bookings';
 import Report from './pages/Report';
 import Settings from './pages/Settings';
 
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="/auto-delete"  element={<AutoDelete />} />
             <Route path="/manual-entry" element={<ManualEntry />} />
             <Route path="/slots"        element={<ViewSlots />} />
+            <Route path="/bookings"     element={<Bookings />} />
             <Route path="/report"       element={<Report />} />
             <Route path="/settings"     element={<Settings />} />
           </Route>

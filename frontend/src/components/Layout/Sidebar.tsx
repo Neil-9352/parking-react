@@ -6,8 +6,9 @@ const navItems = [
   { to: '/auto-entry', icon: '📸', label: 'Auto Entry' },
   { to: '/auto-delete', icon: '🗑️', label: 'Auto Remove' },
   { to: '/manual-entry', icon: '🚗', label: 'Manual Entry' },
-  { to: '/slots', icon: '📋', label: 'View Slots' },
-  { to: '/report', icon: '📊', label: 'Reports' },
+  { to: '/slots',        icon: '📋', label: 'View Slots' },
+  { to: '/bookings',     icon: '📅', label: 'Bookings' },
+  { to: '/report',       icon: '📊', label: 'Reports' },
   { to: '/settings', icon: '⚙️', label: 'Settings' },
 ];
 

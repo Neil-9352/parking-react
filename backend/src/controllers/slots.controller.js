@@ -28,12 +28,14 @@ async function getSlots(req, res) {
         ON  b.slot_id        = ps.slot_id
         AND b.booking_status = 'ACTIVE'
         AND b.expected_end_time > NOW()
+        AND DATE(b.expected_start_time) = CURDATE()
         AND b.booking_id = (
             SELECT b2.booking_id
             FROM   books b2
             WHERE  b2.slot_id        = ps.slot_id
             AND    b2.booking_status = 'ACTIVE'
             AND    b2.expected_end_time > NOW()
+            AND    DATE(b2.expected_start_time) = CURDATE()
             ORDER  BY b2.expected_start_time ASC, b2.booking_id ASC
             LIMIT  1
         )
@@ -50,11 +52,54 @@ async function getSlots(req, res) {
   }
 }
 
+// GET /api/slots/bookings?date=YYYY-MM-DD
+async function getBookings(req, res) {
+  const lot_id = req.admin.lot_id;
+  const { date } = req.query; // optional date filter, e.g. '2026-06-26'
+
+  try {
+    // Build optional date condition
+    const dateCondition = date
+      ? `AND DATE(b.expected_start_time) = ?`
+      : '';
+    const params = date ? [lot_id, date] : [lot_id];
+
+    const [bookings] = await pool.query(`
+      SELECT
+        b.booking_id,
+        b.registration_number,
+        v.type        AS vehicle_type,
+        ps.slot_no,
+        b.expected_start_time,
+        b.expected_end_time,
+        b.booking_status,
+        b.booking_amount,
+        b.refund_status,
+        b.refund_percentage,
+        b.refund_amount,
+        b.cancellation_time,
+        u.name        AS user_name,
+        u.phone       AS user_phone
+      FROM books b
+      JOIN parking_slot ps ON b.slot_id = ps.slot_id
+      LEFT JOIN vehicle v  ON v.registration_number = b.registration_number
+      LEFT JOIN user u     ON u.user_id = b.user_id
+      WHERE ps.lot_id = ?
+      ${dateCondition}
+      ORDER BY b.expected_start_time DESC
+    `, params);
+
+    return res.status(200).json(bookings);
+  } catch (err) {
+    console.error('Get bookings error:', err);
+    return res.status(500).json({ error: 'Failed to fetch bookings' });
+  }
+}
+
 // POST /api/slots/remove/:slotId
 async function removeVehicle(req, res) {
   const lot_id = req.admin.lot_id;
   const slot_id = parseInt(req.params.slotId);
-  const out_time = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const conn = await pool.getConnection();
   try {
@@ -77,15 +122,16 @@ async function removeVehicle(req, res) {
         pi.registration_number,
         v.type,
         pi.in_time,
-        TIMESTAMPDIFF(MINUTE, pi.in_time, ?) AS minutes_parked,
-        GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) AS hours_parked,
+        TIMESTAMPDIFF(MINUTE, pi.in_time, NOW()) AS minutes_parked,
+        GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) AS hours_parked,
         f.first_hour_charge,
         f.rest_hour_charge,
+        NOW() AS out_time,
         CASE 
-          WHEN GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) = 1
+          WHEN GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) = 1
           THEN f.first_hour_charge
           ELSE f.first_hour_charge +
-               (GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, ?) / 3600)) - 1)
+               (GREATEST(1, CEIL(TIMESTAMPDIFF(SECOND, pi.in_time, NOW()) / 3600)) - 1)
                * f.rest_hour_charge
         END AS parking_fee
       FROM parks_in pi
@@ -93,7 +139,7 @@ async function removeVehicle(req, res) {
       JOIN fee f ON pi.fee_id = f.fee_id
       WHERE pi.slot_id = ? AND pi.out_time IS NULL
       LIMIT 1
-    `, [out_time, out_time, out_time, out_time, slot_id]);
+    `, [slot_id]);
 
     if (records.length === 0) {
       await conn.rollback();
@@ -102,10 +148,10 @@ async function removeVehicle(req, res) {
 
     const rec = records[0];
 
-    // Update parks_in
+    // Update parks_in using NOW() to stay consistent with DB timezone
     await conn.query(
-      'UPDATE parks_in SET out_time = ?, fee = ? WHERE id = ?',
-      [out_time, rec.parking_fee, rec.id]
+      'UPDATE parks_in SET out_time = NOW(), fee = ? WHERE id = ?',
+      [rec.parking_fee, rec.id]
     );
 
     // Smart slot restoration
@@ -124,7 +170,7 @@ async function removeVehicle(req, res) {
       plate: rec.registration_number,
       vehicleType: rec.type,
       inTime: rec.in_time,
-      outTime: out_time,
+      outTime: rec.out_time,
       minutesParked: rec.minutes_parked,
       hoursParked: rec.hours_parked,
       firstHourCharge: rec.first_hour_charge,
@@ -159,4 +205,4 @@ async function removeVehicle(req, res) {
   }
 }
 
-module.exports = { getSlots, removeVehicle };
+module.exports = { getSlots, getBookings, removeVehicle };
